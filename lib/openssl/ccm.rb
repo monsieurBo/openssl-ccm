@@ -1,4 +1,4 @@
-require 'openssl'
+require "openssl"
 
 module OpenSSL
   # CCMError used for wrong parameter resonse.
@@ -21,8 +21,10 @@ module OpenSSL
     #
     # @return [[String]] supported algorithms
     def self.ciphers
-      l = OpenSSL::Cipher.ciphers.keep_if { |c| c.end_with?('-128-CBC') or
-        c.end_with?('-192-CBC') or c.end_with?('-256-CBC') }
+      l = OpenSSL::Cipher.ciphers.map(&:upcase).keep_if { |c|
+        c.end_with?("-128-CBC") or
+          c.end_with?("-192-CBC") or c.end_with?("-256-CBC")
+      }
       l.length.times { |i| l[i] = l[i][0..-9] }
       l
     end
@@ -41,9 +43,9 @@ module OpenSSL
       unless CCM.ciphers.include?(cipher)
         fail CCMError, "unsupported cipher algorithm (#{cipher})"
       end
-      fail CCMError, 'invalid key length' unless key.b.length >= 16
+      fail CCMError, "invalid key length" unless key.b.length >= 16
       unless (4..16).step(2).include?(mac_len)
-        fail CCMError, 'invalid mac length'
+        fail CCMError, "invalid mac length"
       end
 
       if key.length < 24
@@ -54,7 +56,7 @@ module OpenSSL
         cipher_key_size = "256"
       end
 
-      @cipher = OpenSSL::Cipher.new("#{cipher}-" + cipher_key_size  + "-CBC")
+      @cipher = OpenSSL::Cipher.new("#{cipher}-" + cipher_key_size + "-CBC")
       @key = key
       @mac_len = mac_len
     end
@@ -68,7 +70,7 @@ module OpenSSL
     #        authenticate with mac (not part of the output)
     #
     # @return [String] the encrypted data with appended mac
-    def encrypt(data, nonce, additional_data = '')
+    def encrypt(data, nonce, additional_data = "")
       valid?(data, nonce, additional_data)
 
       crypt(data, nonce) + mac(data, nonce, additional_data)
@@ -84,36 +86,36 @@ module OpenSSL
     #        authentication (not part of the output)
     #
     # @return [String] the decrypted data without mac
-    def decrypt(data, nonce, additional_data = '')
+    def decrypt(data, nonce, additional_data = "")
       valid?(data, nonce, additional_data)
 
       new_data = crypt(data.b[0...-@mac_len], nonce)
       new_mac = mac(new_data, nonce, additional_data)
       return new_data if new_mac == data.b[-@mac_len..-1]
-      ''
+      ""
     end
 
     private
 
     def valid?(data, nonce, additional_data)
       unless (7..13).include?(nonce.b.length)
-        fail CCMError, 'invalid nonce length'
+        fail CCMError, "invalid nonce length"
       end
-      unless data.b.length < 2**(8 * (15 - nonce.b.length))
-        fail CCMError, 'invalid data length'
+      unless data.b.length < 2 ** (8 * (15 - nonce.b.length))
+        fail CCMError, "invalid data length"
       end
-      unless additional_data.b.length < 2**64
-        fail CCMError, 'invalid additional_data length'
+      unless additional_data.b.length < 2 ** 64
+        fail CCMError, "invalid additional_data length"
       end
       true
     end
 
     def crypt(data, nonce)
-      result = ''
+      result = ""
       data.bytes.each_slice(16).with_index(1) do |block, b|
         counter = get_counter(nonce, b).bytes
         block.length.times { |i| counter[i] ^= block[i] }
-        result << counter[0, block.length].pack('C*')
+        result << counter[0, block.length].pack("C*")
       end
       result
     end
@@ -125,22 +127,22 @@ module OpenSSL
 
       b_0 = Array.new(8, 0)
       b_0[0] = (additional_data.empty? ? 0 : 64) \
-             + (8 * ((@mac_len - 2) / 2)) \
-             + (14 - nonce.b.length)
-      b_0 += [data.b.length].pack('Q').reverse.bytes
+        + (8 * ((@mac_len - 2) / 2)) \
+        + (14 - nonce.b.length)
+      b_0 += [data.b.length].pack("Q").reverse.bytes
       b_0[1, nonce.b.length] = nonce.bytes
-      mac = @cipher.update(b_0.pack('C*')).bytes
+      mac = @cipher.update(b_0.pack("C*")).bytes
 
       unless additional_data.empty?
         len = additional_data.b.length
         d = case
-            when len < (2**16 - 2**8)
-              [len].pack('n')
-            when len < 2**32
-              "\xFF\xFE" + [len].pack('N')
+            when len < (2 ** 16 - 2 ** 8)
+              [len].pack("n")
+            when len < 2 ** 32
+              "\xFF\xFE" + [len].pack("N")
             else
-              "\xFF\xFF" + [len].pack('Q').reverse
-        end + additional_data
+              "\xFF\xFF" + [len].pack("Q").reverse
+            end + additional_data
         mac = @cipher.update(d + padding(d)).bytes[-16..-1]
       end
 
@@ -150,24 +152,24 @@ module OpenSSL
 
       a_0 = get_counter(nonce, 0).bytes
       16.times { |i| mac[i] ^= a_0[i] }
-      mac[0...@mac_len].pack('C*')
+      mac[0...@mac_len].pack("C*")
     end
 
     def padding(data)
-      return '' if (data.b.length % 16) == 0
+      return "" if (data.b.length % 16) == 0
       "\x00" * (16 - (data.b.length % 16))
     end
 
     def get_counter(nonce, index)
       a = Array.new(8, 0)
       a[0] = 14 - nonce.b.length
-      a += [index].pack('Q').reverse.bytes
+      a += [index].pack("Q").reverse.bytes
       a[1, nonce.b.length] = nonce.bytes
 
       @cipher.reset
       @cipher.encrypt
       @cipher.key = @key
-      @cipher.update(a.pack('C*'))
+      @cipher.update(a.pack("C*"))
     end
   end
 end
